@@ -1,113 +1,98 @@
-# Session 1 — Extraction complète : texte + tableaux + figures + formules
+# RAG-PMBOK
+
+Pipeline d'extraction et de traitement de documents pour un système RAG (Retrieval-Augmented Generation) construit sur le PMBOK 7e édition.
+
+## Aperçu
+
+Ce projet transforme un document PDF technique de 370 pages en une base de connaissances structurée, prête à être indexée pour une recherche sémantique. Le pipeline extrait et traite quatre types de contenu distincts : texte, tableaux, figures et formules mathématiques.
+
+## Fonctionnalités
+
+- Extraction de texte structuré avec détection automatique des titres et suppression des en-têtes/pieds de page
+- Chunking sémantique basé sur la structure du document, avec chevauchement configurable
+- Extraction de tableaux via reconnaissance de bordures (Camelot)
+- Extraction de figures avec rendu image et description automatique par modèle de vision (OpenRouter)
+- Détection de formules mathématiques par reconnaissance de motifs, sans dépendance à un service payant
+- Classification automatique par domaine et type de contenu
+- Sortie unifiée au format JSON, prête pour l'indexation vectorielle
+
+## Stack technique
+
+| Composant                             | Technologie                       |
+| ------------------------------------- | --------------------------------- |
+| Extraction de texte                   | PyMuPDF                           |
+| Extraction de tableaux                | Camelot                           |
+| Rendu et traitement d'images          | PyMuPDF                           |
+| Description de figures                | OpenRouter API (modèle de vision) |
+| Gestion des variables d'environnement | python-dotenv                     |
+
+## Installation
+
+```bash
+git clone <url-du-repo>
+cd rag-pmbok
+python -m venv venv
+venv\Scripts\activate
+pip install -r requirements.txt
+```
+
+Copier `.env.example` en `.env` et renseigner les clés API nécessaires :
+
+```
+OPENROUTER_API_KEY=
+GROQ_API_KEY=
+```
+
+## Utilisation
+
+Déposer le PDF source dans `data/raw/`, puis lancer le pipeline complet :
+
+```bash
+cd src
+python pipeline.py
+```
+
+La sortie est générée dans `data/processed/chunks.json`, accompagnée des images de figures dans `data/processed/figures/`.
 
 ## Structure du projet
 
 ```
 rag-pmbok/
 ├── requirements.txt
+├── .env.example
 ├── data/
-│   ├── raw/
-│   │   └── pmbok7.pdf         # le vrai PDF (370 pages)
-│   └── processed/
-│       ├── chunks.json       # sortie du pipeline — tout unifié
-│       └── figures/          # images PNG des figures extraites
+│   ├── raw/              PDF source (non versionné)
+│   └── processed/        Sorties du pipeline (non versionné)
 ├── src/
-│   ├── config.py              # tous les réglages du projet
-│   ├── models.py               # structures de données partagées (TextBlock, Chunk)
-│   ├── extract.py              # Étape 1 : extraction du TEXTE structuré (PyMuPDF)
-│   ├── chunk.py                 # Étape 2 : chunking sémantique + métadonnées
-│   ├── tables.py                 # Étape 3 : extraction des TABLEAUX (Camelot)
-│   ├── figures.py                 # Étape 4 : extraction des FIGURES (rendu image + légende)
-│   ├── vision.py                   # Étape 4bis : description des figures par LLM à vision (Groq)
-│   ├── formulas.py                  # Étape 5 : reconnaissance de FORMULES (MathPix)
-│   ├── multimodal.py               # convertit tout en Chunk unifié
-│   └── pipeline.py                # POINT D'ENTRÉE UNIQUE — python3 pipeline.py
-└── tests/
-    └── make_sample_pdf.py
+│   ├── config.py         Configuration centrale
+│   ├── models.py         Structures de données partagées
+│   ├── extract.py        Extraction de texte
+│   ├── chunk.py           Chunking sémantique
+│   ├── tables.py           Extraction de tableaux
+│   ├── figures.py           Extraction de figures
+│   ├── vision.py             Description de figures par vision
+│   ├── formulas.py            Détection de formules
+│   ├── multimodal.py          Unification des formats de chunk
+│   └── pipeline.py            Point d'entrée principal
 ```
 
-## Les 4 étapes d'extraction — outils et fonctionnement
+## Résultats
 
-### 1. Texte — `extract.py` (PyMuPDF)
+Sur le corpus PMBOK 7e édition (370 pages) :
 
-- `page.get_text("dict")` retourne chaque ligne avec sa **taille de police**
-- La taille la plus fréquente = corps de texte normal ; nettement plus grand = un titre
-- Les lignes qui reviennent sur 3+ pages (en-têtes, pieds de page, numéros de page) sont filtrées
+| Type de contenu             | Nombre  |
+| --------------------------- | ------- |
+| Chunks de texte (processus) | 258     |
+| Figures                     | 61      |
+| Tableaux                    | 41      |
+| Chunks de texte (principe)  | 37      |
+| Chunks de texte (méthode)   | 30      |
+| Chunks de texte (outil)     | 13      |
+| Formules                    | 1       |
+| **Total**                   | **441** |
 
-### 2. Tableaux — `tables.py` (**Camelot**, mode `lattice`)
+Temps d'exécution estimé : 8 à 10 minutes, l'extraction de tableaux représentant la majorité du temps de traitement.
 
-- Analyse les **lignes de bordure réellement dessinées** dans le PDF pour reconstituer la grille ligne/colonne
-- Testé aussi en mode `stream` (devine les colonnes par alignement de texte) mais écarté : beaucoup plus de faux positifs sur le vrai PMBOK
-- Filtré par score de précision (Camelot fournit sa propre confiance par tableau, seuil ≥ 70%) et nombre de colonnes (≥ 2)
-- **Camelot est lent** sur un gros PDF — le traitement se fait par lots de 100 pages (`extract_tables_by_batches`), pas en une seule passe
+## Limitations connues
 
-### 3. Figures — `figures.py` (rendu image) + `vision.py` (**Groq vision**, optionnel)
-
-- Les schémas du PMBOK sont des graphiques **vectoriels** (formes dessinées), pas des images bitmap — pas extractibles directement
-- Le PDF contient déjà une "List of Figures and Tables" (légende + page) qu'on parse, puis on **rend la page entière en image PNG**
-- `vision.py` envoie ensuite chaque image à un modèle Groq capable de "voir", pour obtenir une vraie description du contenu visuel (pas juste la légende) — combinée au texte vectorisé
-- **Point clé :** l'embedding ne voit jamais les pixels — seul le texte (légende + description) est vectorisé, l'image PNG sert uniquement à être affichée dans le chatbot
-
-### 4. Formules mathématiques — `formulas.py` (**MathPix**, optionnel)
-
-- Le PMBOK ne contient des formules (EVM, PERT) que sur une poignée de pages sur 370
-- Recherche de mots-clés d'abord (gratuite, locale) pour repérer les pages candidates — **13 pages trouvées** sur le vrai PDF
-- Seules ces pages sont ensuite envoyées à l'API MathPix pour la vraie reconnaissance de formule (texte + LaTeX)
-
-## Étapes optionnelles NON TESTÉES avec un vrai appel API (important)
-
-`vision.py` (Groq) et `formulas.py` (MathPix) nécessitent des clés API externes.
-**Mon environnement de développement n'a pas d'accès réseau vers ces deux services** — le code
-suit leur documentation officielle, mais je n'ai pas pu vérifier un vrai appel de bout en bout.
-**C'est à toi de tester avec de vraies clés avant la session** :
-
-```bash
-export GROQ_API_KEY="ta_clé_groq"
-export MATHPIX_APP_ID="ton_app_id"
-export MATHPIX_APP_KEY="ta_clé_mathpix"
-cd src
-python3 pipeline.py
-```
-
-Sans ces clés, le pipeline tourne quand même normalement — ces deux étapes se désactivent
-proprement (message clair, pas d'erreur), les figures gardent juste leur légende sans description,
-et aucune formule n'est reconnue.
-
-## Pourquoi Camelot plutôt que pdfplumber (changement important)
-
-**Le rapport déjà déposé annonce Camelot** pour les tableaux — la première version de ce pipeline
-utilisait pdfplumber par erreur de ma part. C'est corrigé : le code utilise maintenant Camelot,
-pour que ce qui est montré en soutenance corresponde à ce qui est écrit dans le rapport.
-Bonus : Camelot trouve plus de tableaux que pdfplumber sur le vrai PMBOK (41 contre 20).
-
-## Résultat final sur le vrai PDF — 440 chunks au total
-
-| Type de contenu   | Nombre                                        |
-| ----------------- | --------------------------------------------- |
-| processus (texte) | 258                                           |
-| figure            | 61                                            |
-| tableau           | 41                                            |
-| principe (texte)  | 37                                            |
-| méthode (texte)   | 30                                            |
-| outil (texte)     | 13                                            |
-| formule           | 0 (nécessite une clé MathPix pour être testé) |
-
-## Temps d'exécution à prévoir
-
-Camelot est l'étape la plus lente : compter **7 à 9 minutes** pour les tableaux sur les 370 pages,
-plus 1-2 minutes pour le reste (texte, figures). Si tu ajoutes les clés Groq/MathPix, prévois du
-temps supplémentaire pour les appels API (61 figures + 13 pages de formules, avec une pause entre
-chaque appel pour ne pas dépasser les limites de débit). **C'est une étape one-time** : une fois
-`chunks.json` généré, plus besoin de relancer l'extraction à chaque test des sessions suivantes.
-
-## Limite à assumer honnêtement (classification de domaine)
-
-`_guess_domain()` reste une heuristique par mots-clés simple — "Parties prenantes" domine
-largement la classification car "stakeholder" traverse tout le référentiel. À présenter comme
-limite du POC en perspectives, pas comme un résultat de classification fiable.
-
-## Avant la session : à faire de ton côté
-
-1. Relance `python3 pipeline.py` en entier une fois (prévoir ~10 min) pour vérifier que tout tourne chez toi
-2. Teste `vision.py` et `formulas.py` avec tes vraies clés API — je n'ai pas pu le faire ici
-3. Regarde `data/processed/chunks.json` et quelques tableaux/figures pour avoir des exemples concrets
+La classification par domaine repose sur une correspondance de mots-clés simple plutôt que sur un classifieur entraîné, ce qui peut produire une répartition déséquilibrée sur certains termes très fréquents dans le corpus.
