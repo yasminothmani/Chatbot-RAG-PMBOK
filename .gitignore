@@ -1,0 +1,19 @@
+.env
+
+# Environnement virtuel Python
+venv/
+.venv/
+
+# Fichiers compilés Python
+__pycache__/
+*.pyc
+
+# Le PDF source du PMBOK — gros fichier (20 Mo) + contenu protégé par copyright PMI
+data/raw/*.pdf
+
+# Résultats d'exécution tout ce que produit le pipeline, à générer par chacun
+# en lançant le code soi-même, pas à récupérer tout fait
+data/processed/
+
+# Fichiers temporaires générés par Camelot
+*.log
