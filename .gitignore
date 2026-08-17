@@ -17,3 +17,5 @@ data/processed/
 
 # Fichiers temporaires générés par Camelot
 *.log
+
+add_vision_only.py
