@@ -19,3 +19,4 @@ data/processed/
 *.log
 
 add_vision_only.py
+demo_search.py

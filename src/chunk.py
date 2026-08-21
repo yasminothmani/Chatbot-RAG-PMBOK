@@ -3,7 +3,7 @@ Chunking sémantique + métadonnées.
 
 Prend la liste de TextBlock produite par extract.py et regroupe les lignes
 en chunks d'environ 512 tokens (avec chevauchement de 50 tokens), en coupant
-aux frontières de section MAJEURES (titres de niveau 1) — pas à chaque
+aux frontières de section MAJEURES (titres de niveau 1) pas à chaque
 sous-titre, sinon les chunks deviennent beaucoup trop petits (testé sur le
 vrai PMBOK : couper à chaque sous-titre donnait 1019 chunks de 75 tokens en
 moyenne au lieu de 338 chunks de ~519 tokens, largement trop fragmenté).
@@ -17,14 +17,15 @@ from pathlib import Path
 from models import TextBlock, Chunk
 import config
 
-TARGET_TOKENS = config.CHUNK_TARGET_TOKENS
-OVERLAP_TOKENS = config.CHUNK_OVERLAP_TOKENS
+TARGET_TOKENS = config.CHUNK_TARGET_TOKENS  #la taille visée de tockens pour un seul chunk
+OVERLAP_TOKENS = config.CHUNK_OVERLAP_TOKENS #overlap: quand un chunk se ferme,
+                                    #on recopie ses 50 derniers tokens au tout début du chunk suivant
 
+
+#keyword dictionaries used for a simple rule-based classification
 # Mots-clés pour rattacher un chunk à un domaine PMBOK. Le PMBOK 7 est en anglais
-# (édition originale PMI) — les mots-clés couvrent donc l'anglais en priorité.
-# Note : "stakeholder" domine largement la classification sur le vrai PMBOK
-# (ce terme traverse presque tout le référentiel) — c'est une limite connue de
-# cette heuristique simple, assumée comme telle dans le rapport.
+# (édition originale PMI) les mots-clés couvrent donc l'anglais en priorité.
+
 DOMAIN_KEYWORDS = {
     "Parties prenantes": ["stakeholder", "partie prenante"],
     "Équipe": ["team performance", "leadership", "équipe projet"],
@@ -57,7 +58,8 @@ def _guess_domain(text: str) -> str:
             return domain
     return "Non classé"
 
-
+#quelle sorte d'info c'est : un principe (règle générale), un processus (étapes à suivre), un outil (instrument concret) ou une méthode (technique précise)
+#Un même domaine peut contenir les 4 types à la fois donc we need to highlight themm
 def _guess_content_type(text: str) -> str:
     lowered = text.lower()
     for ctype, keywords in CONTENT_TYPE_KEYWORDS.items():

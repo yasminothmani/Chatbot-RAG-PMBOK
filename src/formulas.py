@@ -17,7 +17,10 @@ Ce module se contente donc de repérer, dans le texte déjà extrait, les
 passages qui RESSEMBLENT à une formule (motif "XXX = ...") et de les
 regrouper en chunks dédiés avec le type 'formule' — pour qu'ils soient
 facilement identifiables et priorisables au retrieval, plutôt que noyés
-dans un chunk de texte général.
+dans un chunk de texte général
+
+Utilise uniquement re (le module d'expressions régulières standard de Python) pour chercher des lignes qui ressemblent à "XXX = quelque chose" (2 à 5 lettres majuscules, suivies d'un signe égal)
+Réutilise PyMuPDF (déjà présent dans le projet pour extract.py) juste pour relire le texte de chaque page
 """
 
 import re
