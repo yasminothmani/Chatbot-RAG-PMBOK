@@ -42,7 +42,7 @@ FAISS_INDEX_PATH = DATA_PROCESSED_DIR / "pmbok.index"
 
 # --- Session 3 : Retrieval & Reranking (à venir) ---
 TOP_K_RETRIEVAL = 5
-CROSS_ENCODER_MODEL_NAME = "cross-encoder/ms-marco-MiniLM-L-6-v2"
+CROSS_ENCODER_MODEL_NAME = "cross-encoder/mmarco-mMiniLMv2-L12-H384-v1"
 
 # --- Session 4 : Génération (à venir) ---
 GROQ_MODEL_NAME = "llama-3.3-70b-versatile"
