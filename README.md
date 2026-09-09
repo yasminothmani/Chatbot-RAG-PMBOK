@@ -1,120 +1,154 @@
 # RAG-PMBOK
 
-Pipeline d'extraction, de traitement et d'indexation de documents pour un système RAG (Retrieval-Augmented Generation) construit sur le PMBOK 7e édition.
+Pipeline d'extraction, de traitement, d'indexation et de recherche pour un système RAG (Retrieval-Augmented Generation) construit sur le PMBOK 7e édition.
 
 ## Aperçu
 
-Ce projet transforme un document PDF technique de 370 pages en une base de connaissances vectorisée, prête pour la recherche sémantique. Le pipeline extrait quatre types de contenu (texte, tableaux, figures, formules), les découpe en chunks, puis les encode en vecteurs indexés pour une recherche rapide.
-
-## Fonctionnalités
-
-- Extraction de texte structuré avec détection automatique des titres et suppression des en-têtes/pieds de page
-- Chunking sémantique basé sur la structure du document, avec chevauchement configurable
-- Extraction de tableaux via reconnaissance de bordures (Camelot)
-- Extraction de figures avec rendu image et description automatique par modèle de vision (OpenRouter)
-- Détection de formules mathématiques par reconnaissance de motifs, sans dépendance à un service payant
-- Classification automatique par domaine et type de contenu
-- Génération d'embeddings multilingues et indexation vectorielle (FAISS)
+Ce projet transforme un document PDF technique de 370 pages en une base de connaissances vectorisée, interrogeable en langage naturel. Le pipeline extrait quatre types de contenu (texte, tableaux, figures, formules), les découpe en chunks, les vectorise, les indexe, puis retrouve et classe les passages les plus pertinents pour une question posée.
 
 ## Stack technique
 
-| Composant                             | Technologie                                                  |
-| ------------------------------------- | ------------------------------------------------------------ |
-| Extraction de texte                   | PyMuPDF                                                      |
-| Extraction de tableaux                | Camelot                                                      |
-| Rendu et traitement d'images          | PyMuPDF                                                      |
-| Description de figures                | OpenRouter API (modèle de vision)                            |
-| Modèle d'embedding                    | paraphrase-multilingual-MiniLM-L12-v2 (SentenceTransformers) |
-| Base vectorielle                      | FAISS (IndexFlatL2)                                          |
-| Gestion des variables d'environnement | python-dotenv                                                |
+| Composant                    | Technologie                                             |
+| ---------------------------- | ------------------------------------------------------- |
+| Extraction de texte          | PyMuPDF                                                 |
+| Extraction de tableaux       | Camelot                                                 |
+| Rendu et traitement d'images | PyMuPDF                                                 |
+| Description de figures       | OpenRouter API                                          |
+| Modèle d'embedding           | paraphrase-multilingual-MiniLM-L12-v2                   |
+| Base vectorielle             | FAISS (IndexFlatL2)                                     |
+| Reranking                    | CrossEncoder multilingue (mmarco-mMiniLMv2-L12-H384-v1) |
 
-## Installation
+## Guide de démarrage
 
-```bash
+Suis ces étapes dans l'ordre pour faire fonctionner le projet sur ta machine.
+
+### Étape 1 : Récupérer le projet
+
+```
 git clone <url-du-repo>
 cd rag-pmbok
+```
+
+### Étape 2 : Créer un environnement virtuel
+
+Un environnement virtuel isole les dépendances de ce projet du reste de ta machine.
+
+```
 python -m venv venv
+```
+
+Active-le :
+
+```
 venv\Scripts\activate
+```
+
+Tu dois voir `(venv)` apparaître au début de ta ligne de commande.
+
+### Étape 3 : Installer les dépendances
+
+```
 pip install -r requirements.txt
 ```
 
-Copier `.env.example` en `.env` et renseigner les clés API nécessaires :
+### Étape 4 : Configurer les clés API
+
+Copie le fichier d'exemple :
 
 ```
-OPENROUTER_API_KEY=
-GROQ_API_KEY=
+copy .env.example .env
 ```
 
-## Utilisation
+Ouvre `.env` et renseigne tes propres clés :
 
-### Extraction et chunking
+```
+OPENROUTER_API_KEY=ta_cle_openrouter
+GROQ_API_KEY=ta_cle_groq
+```
 
-Déposer le PDF source dans `data/raw/`, puis lancer le pipeline d'extraction :
+Clé OpenRouter gratuite sur openrouter.ai. Clé Groq gratuite sur console.groq.com.
 
-```bash
+### Étape 5 : Ajouter le PDF source
+
+Place le PDF du PMBOK 7e édition dans le dossier `data/raw/`. Le nom du fichier n'a pas d'importance, le pipeline traite tous les PDFs présents dans ce dossier.
+
+### Étape 6 : Lancer l'extraction complète
+
+```
 cd src
 python pipeline.py
 ```
 
-La sortie est générée dans `data/processed/chunks.json`, accompagnée des images de figures dans `data/processed/figures/`.
+Cette étape extrait le texte, les tableaux, les figures et les formules, puis sauvegarde le résultat dans `data/processed/chunks.json`. Compte 8 à 10 minutes, l'extraction des tableaux étant la partie la plus longue.
 
-### Embeddings et indexation vectorielle
+### Étape 7 : Générer les embeddings et construire l'index
 
-Une fois `chunks.json` généré, encoder les chunks et construire l'index de recherche :
-
-```bash
-python embeddings.py
+```
 python vector_store.py
 ```
 
-L'index vectoriel est sauvegardé dans `data/processed/pmbok.index`.
+Cette étape encode chaque chunk en vecteur, construit l'index FAISS et le sauvegarde dans `data/processed/pmbok.index`. Compte environ 30 secondes.
+
+### Étape 8 : Tester le retrieval
+
+```
+python retrieval.py "Comment gérer l'engagement des parties prenantes ?"
+```
+
+Affiche les chunks les plus proches de la question, retrouvés par FAISS.
+
+### Étape 9 : Tester le reranking
+
+```
+python reranker.py "Comment gérer l'engagement des parties prenantes ?"
+```
+
+Affiche l'ordre des résultats avant et après le passage par le CrossEncoder. Le premier lancement télécharge le modèle, ce qui prend un peu de temps.
 
 ## Structure du projet
 
 ```
 rag-pmbok/
-├── requirements.txt
-├── .env.example
-├── data/
-│   ├── raw/                 PDF source (non versionné)
-│   └── processed/           Sorties du pipeline (non versionné)
-├── src/
-│   ├── config.py            Configuration centrale
-│   ├── models.py            Structures de données partagées
-│   ├── extract.py           Extraction de texte
-│   ├── chunk.py             Chunking sémantique
-│   ├── tables.py            Extraction de tableaux
-│   ├── figures.py           Extraction de figures
-│   ├── vision.py            Description de figures par vision
-│   ├── formulas.py          Détection de formules
-│   ├── multimodal.py        Unification des formats de chunk
-│   ├── pipeline.py          Point d'entrée de l'extraction
-│   ├── embeddings.py        Génération des vecteurs d'embedding
-│   └── vector_store.py      Construction et recherche dans l'index FAISS
+    requirements.txt
+    .env.example
+    data/
+        raw/
+        processed/
+    src/
+        config.py
+        models.py
+        extract.py
+        chunk.py
+        tables.py
+        figures.py
+        vision.py
+        formulas.py
+        multimodal.py
+        pipeline.py
+        embeddings.py
+        vector_store.py
+        retrieval.py
+        reranker.py
 ```
 
-## Résultats
+## Résultats obtenus sur le corpus PMBOK 7e édition
 
-Sur le corpus PMBOK 7e édition (370 pages) :
+| Type de contenu             | Nombre |
+| --------------------------- | ------ |
+| Chunks de texte (processus) | 258    |
+| Figures                     | 61     |
+| Tableaux                    | 41     |
+| Chunks de texte (principe)  | 37     |
+| Chunks de texte (méthode)   | 30     |
+| Chunks de texte (outil)     | 13     |
+| Formules                    | 1      |
+| Total                       | 441    |
 
-| Type de contenu             | Nombre  |
-| --------------------------- | ------- |
-| Chunks de texte (processus) | 258     |
-| Figures                     | 61      |
-| Tableaux                    | 41      |
-| Chunks de texte (principe)  | 37      |
-| Chunks de texte (méthode)   | 30      |
-| Chunks de texte (outil)     | 13      |
-| Formules                    | 1       |
-| **Total**                   | **441** |
+Chaque chunk est encodé en un vecteur de 384 dimensions. Le reranking par CrossEncoder modifie systématiquement une partie de l'ordre initial fourni par FAISS, en corrigeant les cas où la proximité vectorielle ne reflète pas exactement la pertinence réelle par rapport à la question posée.
 
-Temps d'exécution de l'extraction : 8 à 10 minutes, l'extraction de tableaux représentant la majorité du temps de traitement. L'encodage des 441 chunks en vecteurs prend quelques secondes, sans dépendance réseau.
+## Choix du modèle multilingue
 
-Chaque chunk est encodé en un vecteur de 384 dimensions, indexé dans une structure FAISS à recherche exacte (IndexFlatL2), adaptée à la taille du corpus.
-
-## Choix du modèle d'embedding
-
-Le modèle retenu, paraphrase-multilingual-MiniLM-L12-v2, diffère du modèle initialement envisagé (all-MiniLM-L6-v2, entraîné principalement en anglais). Ce choix répond à un besoin concret : le corpus source est en anglais, mais les descriptions de figures générées par le modèle de vision sont en français, et les utilisateurs du chatbot peuvent poser leurs questions dans l'une ou l'autre langue. Un modèle multilingue place les représentations vectorielles des deux langues dans un espace sémantique commun, permettant une recherche cohérente indépendamment de la langue de la question.
+Le PMBOK est en anglais, mais les utilisateurs du chatbot peuvent poser leurs questions en français. Le modèle d'embedding et le modèle de reranking ont tous les deux été choisis dans leur version multilingue, plutôt que dans leur version anglaise plus répandue, pour que la recherche fonctionne correctement quelle que soit la langue de la question.
 
 ## Limitations connues
 
