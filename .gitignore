@@ -20,3 +20,5 @@ data/processed/
 
 add_vision_only.py
 demo_search.py
+data/processed/chat_history.json
+static/

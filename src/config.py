@@ -44,18 +44,17 @@ FAISS_INDEX_PATH = DATA_PROCESSED_DIR / "pmbok.index"
 TOP_K_RETRIEVAL = 5
 CROSS_ENCODER_MODEL_NAME = "cross-encoder/mmarco-mMiniLMv2-L12-H384-v1"
 
-# --- Session 4 : Génération (à venir) ---
-GROQ_MODEL_NAME = "llama-3.3-70b-versatile"
+# --- Session 4 : Génération ---
+GROQ_MODEL_NAME = "openai/gpt-oss-120b"
+TOP_N_CONTEXT = 4
+MAX_ANSWER_TOKENS = 900
+MAX_CONTEXT_TOKENS = 4500
 
 # --- Description des figures par LLM à vision (session 1, étape 4bis) ---
-# ATTENTION : nom de modèle à VÉRIFIER sur https://openrouter.ai/models
-# (filtrer par "vision", trier par prix) avant utilisation — les catalogues de
-# modèles gratuits changent vite (on s'est déjà fait avoir 2 fois, avec Groq
-# puis Gemini).
 OPENROUTER_VISION_MODEL_NAME = "google/gemini-2.5-flash-lite"
 
-# --- Clé API OpenRouter, chargée depuis le fichier .env (voir .env.example) ---
+# --- Clés API, chargées depuis le fichier .env (voir .env.example) ---
 OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY")
-
-# --- Clé API Groq (génération finale du chatbot, session 4 — inchangée) ---
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
+
+RAGAS_JUDGE_MODEL = "openai/gpt-oss-20b"

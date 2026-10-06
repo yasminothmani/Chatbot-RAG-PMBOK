@@ -1,13 +1,25 @@
 # Session 1 — Extraction texte + tableaux + figures + formules
 PyMuPDF==1.24.10
 camelot-py==1.0.9
-groq==0.9.0
-google-genai
 requests==2.32.3
 python-dotenv==1.0.1
 
-# Sessions suivantes (embeddings, FAISS, LLM, interface)
+# Session 2 — Embeddings + FAISS
 sentence-transformers==3.0.1
 faiss-cpu==1.8.0
-streamlit==1.37.0
 numpy==1.26.4
+
+# Session 3 — Retrieval hybride (BM25 + FAISS) + reranking
+rank_bm25==0.2.2
+
+# Session 4 — Génération (Groq)
+groq==0.37.1
+
+# Session 5 — Interface
+streamlit==1.37.0
+markdown==3.6
+
+# Session 6 — Évaluation RAGAS (juge LLM via Groq, interface LangChain)
+ragas==0.2.15
+langchain-groq==0.3.2
+langchain-core==0.3.86
