@@ -183,7 +183,10 @@ def answer_question(question: str, history=None) -> dict:
     if intent == "follow_up" and previous and previous.get("chunks_used"):
         candidates = previous["chunks_used"]
         top_n = len(candidates) if previous.get("mode") in ("type", "domaine") else None
-        result = generate_answer(question, candidates, top_n=top_n, client=groq_client, history=history, lang=lang)
+        # On précise la cible : sans cela, le modèle peut s'appuyer sur le
+        # contenu des extraits plutôt que sur sa dernière réponse.
+        target = "(concerne ta toute dernière réponse)" if lang == "fr" else "(applies to your very last answer)"
+        result = generate_answer(f"{question} {target}", candidates, top_n=top_n, client=groq_client, history=history, lang=lang)
         result["mode"] = "suivi"
         result["language"] = lang
         result["chunks_used"] = candidates
@@ -206,9 +209,11 @@ def answer_question(question: str, history=None) -> dict:
     elif mode == "broad":
         reranked = rerank(search_query, candidates, model=cross_model)
         result = generate_answer(question, reranked, top_n=BROAD_TOP_N, client=groq_client, history=history, lang=lang)
+        candidates = reranked[:BROAD_TOP_N]
     else:
         reranked = rerank(search_query, candidates, model=cross_model)
         result = generate_answer(question, reranked, client=groq_client, history=history, lang=lang)
+        candidates = reranked
 
     result["mode"] = mode
     result["language"] = lang

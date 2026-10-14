@@ -32,16 +32,6 @@ def embed_query(question: str, model_name: str = None, model=None) -> np.ndarray
 
 
 # --- Recherche hybride : dense (FAISS) + lexicale (BM25), fusion RRF ---
-#
-# Constat de l'évaluation : la recherche purement sémantique rate tout ce
-# qui est LITTÉRAL — un sigle (CPI), un terme précis (estimating), un numéro
-# de figure, un nom propre (Scrum). Un modèle d'embedding compare des sens ;
-# "CPI" dans une question française et "CPI = EV / AC" dans un chunk de
-# symboles ne se ressemblent pas sémantiquement, alors qu'ils partagent le
-# même token. BM25 (matching de mots-clés) capture exactement ça. Les deux
-# classements sont fusionnés par Reciprocal Rank Fusion : un chunk bien
-# classé par l'une OU l'autre méthode remonte. C'est la recherche hybride
-# prévue dans le plan initial.
 
 import re as _re
 
@@ -62,9 +52,15 @@ def get_bm25(chunks: list[dict]):
     return _bm25_cache[key]
 
 
-def retrieve(question: str, k: int = None, embed_model=None, index=None, chunks=None) -> list[dict]:
+def retrieve(question: str, k: int = None, embed_model=None, index=None, chunks=None,
+             exclude_types: tuple = ()) -> list[dict]:
     """Recherche hybride. Retourne les k meilleurs chunks (bruit exclu), chacun
-    avec faiss_distance (si classé par FAISS) et rrf_score."""
+    avec faiss_distance (si classé par FAISS) et rrf_score.
+
+    `exclude_types` écarte certains content_type du résultat (ex. "figure") :
+    pour une question de liste, les descriptions de figures — nombreuses et
+    pleines de vocabulaire PMBOK — peuvent occuper tous les premiers rangs et
+    chasser le texte de la section qui contient réellement la réponse."""
     k = k or config.TOP_K_RETRIEVAL
     index = index if index is not None else load_index()
     chunks = chunks if chunks is not None else load_chunks()
@@ -93,7 +89,7 @@ def retrieve(question: str, k: int = None, embed_model=None, index=None, chunks=
 
     results = []
     for idx in sorted(fused, key=lambda i: fused[i], reverse=True):
-        if is_noise_chunk(chunks[idx]):
+        if is_noise_chunk(chunks[idx]) or chunks[idx].get("content_type") in exclude_types:
             continue
         candidate = dict(chunks[idx])
         candidate["rrf_score"] = fused[idx]
@@ -103,6 +99,38 @@ def retrieve(question: str, k: int = None, embed_model=None, index=None, chunks=
         if len(results) == k:
             break
     return results
+
+
+def add_following_chunks(candidates: list[dict], chunks: list[dict], top: int = 5, span: int = 2,
+                         exclude_types: tuple = ()) -> list[dict]:
+    """Ajoute, pour les `top` meilleurs candidats, les `span` chunks qui les
+    SUIVENT dans le document.
+
+    Pourquoi : le chunking coupe tous les ~2000 caractères, sans égard pour la
+    structure. Une liste ou une section qui dépasse un chunk se retrouve donc
+    répartie sur deux ou trois chunks consécutifs, souvent avec des étiquettes
+    différentes (les principes 1-7 sont dans un chunk "principe", les
+    principes 8-12 dans les deux suivants, étiquetés "processus"). La
+    recherche trouve le premier ; la suite est juste derrière lui.
+
+    On ne décide pas ici si les voisins sont utiles : ils rejoignent le lot de
+    candidats, et c'est le reranker (CrossEncoder) qui juge ensuite de leur
+    pertinence par rapport à la question. Les voisins hors sujet tombent."""
+    position = {c["chunk_id"]: i for i, c in enumerate(chunks)}
+    present = {c["chunk_id"] for c in candidates}
+    extra = []
+    for c in candidates[:top]:
+        i = position.get(c["chunk_id"])
+        if i is None or is_noise_chunk(c):
+            continue   # un sommaire ou un index n'a pas de "suite" utile
+        for j in range(i + 1, min(i + 1 + span, len(chunks))):
+            neighbor = chunks[j]
+            if (neighbor["chunk_id"] in present or is_noise_chunk(neighbor)
+                    or neighbor.get("content_type") in exclude_types):
+                continue
+            present.add(neighbor["chunk_id"])
+            extra.append(dict(neighbor))
+    return candidates + extra
 
 
 # --- Détection d'intention d'énumération par type (routage par métadonnées) ---
@@ -134,18 +162,18 @@ def is_noise_chunk(chunk: dict) -> bool:
 
 
 def retrieve_by_type(content_type: str, max_results: int = 20, chunks=None,
-                     question: str = None, embed_model=None, index=None) -> list[dict]:
+                     question: str = None, embed_model=None, index=None,
+                     include_noise: bool = False) -> list[dict]:
     """Chunks d'un content_type donné, classés par similarité à la question.
 
     Découvert lors de l'évaluation ("combien de méthodes d'estimation") : la
     version précédente prenait les max_results PREMIERS chunks du type dans
     l'ordre du document, sans classement. Il y a 30 chunks "méthode" ; la
     section sur l'estimation (page ~175) était au-delà des 15 premiers, et
-    ce qui remontait à la place était du bruit de sommaire. Ça marchait pour
-    les 12 principes seulement parce qu'ils sont contigus en début de document."""
+    ce qui remontait à la place était du bruit de sommaire."""
     chunks = chunks if chunks is not None else load_chunks()
     matching = [(i, c) for i, c in enumerate(chunks)
-                if c["content_type"] == content_type and not is_noise_chunk(c)]
+                if c["content_type"] == content_type and (include_noise or not is_noise_chunk(c))]
 
     if question is None:
         return [c for _, c in matching[:max_results]]
@@ -163,13 +191,6 @@ def retrieve_by_type(content_type: str, max_results: int = 20, chunks=None,
 
 
 # --- Routage spécifique aux domaines de performance ---
-#
-# Ne se fie PAS au champ `domain` des chunks : la classification par
-# mots-clés (chunk.py, session 1) contient "performance domain" comme
-# mot-clé pour "Mesure", or les 8 figures de domaines contiennent TOUTES
-# cette expression dans leur titre — ce qui contamine la classification.
-# On cherche donc directement, dans tout le corpus, la figure dont le
-# titre contient le vrai nom officiel anglais de chaque domaine.
 
 ALL_DOMAINS = [
     "Parties prenantes", "Équipe", "Approche de développement",
@@ -229,8 +250,10 @@ GENERIC_ENUMERATION_MARKERS = [
     "liste", "list all", "énumère", "what are the", "citez",
 ]
 
-BROAD_TOP_K = 12
-BROAD_TOP_N = 10
+BROAD_TOP_K = 12     # candidats pour les questions larges
+BROAD_TOP_N = 10     # chunks gardés après reranking et envoyés au LLM
+PRINCIPLES_POOL_K = 6    # candidats de la recherche hybride pour les questions sur les principes
+PRINCIPLES_TYPE_K = 40   # tous les chunks "principe" (hors bruit) : le reranker choisit, pas l'embedding
 
 
 def is_broad_question(question: str) -> bool:
@@ -239,18 +262,6 @@ def is_broad_question(question: str) -> bool:
 
 
 # --- Routage "formule" ---
-#
-# Découvert lors de l'évaluation (question "Comment calcule-t-on le CPI et
-# le SPI ?") : le chunk de formules (page 196 : CV = EV - AC, CPI = EV / AC,
-# SPI = EV / PV, SV = EV - PV) n'est presque que des symboles, sans langage
-# naturel. Un modèle d'embedding compare des SENS : une question en prose
-# ressemble bien plus à de la prose sur la mesure de performance qu'à une
-# ligne de symboles — les chunks en prose gagnent, le bon chunk est manqué.
-# C'est la faiblesse classique de la recherche dense sur du contenu
-# symbolique, là où un matching lexical ("CPI" est littéralement dans le
-# chunk) réussirait. Correction : détecter l'intention "formule" par
-# mots-clés et injecter directement les chunks de type "formule" (il y en
-# a un seul) en tête des candidats, sans passer par la similarité vectorielle.
 
 import re
 
@@ -309,6 +320,39 @@ def smart_retrieve_v3(question: str, embed_model=None, index=None, chunks=None):
             return formulas + others, "formule"
 
     intent = detect_content_type_intent(question)
+    if intent == "principe":
+        # Le label "principe" ne sert pas ici : il a été posé par mots-clés et
+        # se retrouve sur l'index, le glossaire et les annexes (4 chunks utiles
+        # sur 37), alors que les principes 8 à 12 sont dans des chunks
+        # étiquetés "processus". On passe donc par la recherche (hybride, sans
+        # les figures qui occupaient tous les premiers rangs), on ajoute les
+        # chunks qui suivent les meilleurs (la section déborde sur ses
+        # voisins), et le reranker, appelé ensuite par l'application, garde les
+        # BROAD_TOP_N plus pertinents pour la question.
+        # Deux sources de candidats, fusionnées :
+        #  - TOUS les chunks étiquetés "principe" (le label sert d'indice pour
+        #    constituer un lot de candidats, pas de verdict). On ne les classe
+        #    pas ici par similarité d'embedding : testé, une question française
+        #    sur "12 principes" ressemble davantage à l'introduction et au
+        #    glossaire qu'au chapitre 3 qui contient la liste. Le CrossEncoder,
+        #    qui lit la question et le texte ensemble, est bien meilleur juge ;
+        #  - quelques résultats de la recherche hybride, sans les figures.
+        # include_noise=True : le SOMMAIRE (chunk 0014, "3.1 Be a Diligent...
+        # 3.12 Enable Change...") est ici la meilleure source pour la liste
+        # complète des 12 titres, alors que le filtre anti-bruit le rejette
+        # (il compte les "...." des numéros de page). Le chapitre 3 apporte
+        # ensuite les explications. Le reranker départage sommaire, chapitre,
+        # index et glossaire.
+        by_label = retrieve_by_type("principe", max_results=PRINCIPLES_TYPE_K, chunks=chunks,
+                                    question=question, embed_model=embed_model, index=index,
+                                    include_noise=True)
+        hybrid = retrieve(question, k=PRINCIPLES_POOL_K, embed_model=embed_model, index=index,
+                          chunks=chunks, exclude_types=("figure",))
+        seen = {c["chunk_id"] for c in by_label}
+        pool = by_label + [c for c in hybrid if c["chunk_id"] not in seen]
+        pool = add_following_chunks(pool, chunks, top=len(by_label) + 4, span=2, exclude_types=("figure",))
+        return pool, "broad"
+
     if intent:
         # Deux besoins opposés se cachaient derrière un même mot de catégorie.
         # "Quels sont les outils mentionnés ?" est une énumération PURE : il

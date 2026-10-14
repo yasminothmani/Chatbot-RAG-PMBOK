@@ -27,9 +27,11 @@ Cite les sources utilisées (leur identifiant) à la fin de ta réponse."""
 
 CLASSIFY_PROMPT = """Tu analyses le dernier message d'un utilisateur d'un chatbot sur le PMBOK 7, à la lumière de l'historique de la conversation.
 Réponds UNIQUEMENT par un objet JSON avec ces trois champs :
-- "intent" : "small_talk" si le message est une salutation, un remerciement, un au revoir, une réaction (« ok », « super ») ou une question sur le chatbot lui-même ; "follow_up" si le message demande de revenir sur la réponse précédente sans nouveau sujet (« es-tu sûr ? », « explique plus », « reformule », « un exemple », « résume », « traduis », « pourquoi ? ») ; "question" sinon.
+- "intent" : "small_talk" si le message est une salutation, un remerciement, un au revoir, une réaction (« ok », « super ») ou une question sur le chatbot lui-même ; "follow_up" UNIQUEMENT si le message demande de retravailler la réponse précédente dans son ensemble, sans désigner aucun élément (« es-tu sûr ? », « reformule », « résume », « traduis », « plus simple », « un exemple », « explique plus ») ; "question" sinon.
+  RÈGLE : dès que le message désigne un élément (un numéro, un ordinal, un nom : « le 8ème », « explique le 3ème », « et le deuxième ? », « the second one », « le principe sur les risques »), c'est une "question", même très courte : il y a un nouveau sujet à chercher.
+  Exemples : « reformule » -> follow_up ; « explique le 8ème » -> question ; « et le 3ème ? » -> question ; « can you explain the first one » -> question ; « explique plus » -> follow_up.
 - "language" : "fr" ou "en", la langue du message (en cas de doute, la langue de la conversation).
-- "search_query" : la question reformulée en une phrase autonome, compréhensible sans l'historique, dans la langue du message, pour une recherche documentaire (« et pour les programmes ? » devient « Qu'est-ce qu'un programme ? »). Si le message est déjà autonome, le recopier tel quel. Pour small_talk et follow_up, recopier le message.
+- "search_query" : la question reformulée en une phrase autonome, compréhensible sans l'historique, dans la langue du message, pour une recherche documentaire (« et pour les programmes ? » devient « Qu'est-ce qu'un programme ? »). Quand le message désigne un élément de la réponse précédente, search_query doit le nommer explicitement à partir de l'historique (« explique le 8ème » après une liste de principes devient « Explique le principe Intégrer la qualité dans les processus et les livrables »). Si le message est déjà autonome, le recopier tel quel. Pour small_talk et follow_up, recopier le message.
 Ne réponds jamais à la question. Aucun texte en dehors du JSON."""
 
 HISTORY_TURNS = 3
